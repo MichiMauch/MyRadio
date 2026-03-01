@@ -13,22 +13,29 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.myradio.cast.CastManager
 import com.example.myradio.cast.CastState
-import com.example.myradio.data.local.SongHistoryStorage
+import com.example.myradio.data.local.db.MyRadioDatabase
+import com.example.myradio.data.local.db.SongHistoryEntity
+import com.example.myradio.data.local.db.toPlayedSong
 import com.example.myradio.data.model.PlayedSong
 import com.example.myradio.data.model.PodcastEpisode
 import com.example.myradio.data.model.RadioStation
 import com.example.myradio.data.repository.RadioRepository
+import com.example.myradio.playback.NetworkConnectivityMonitor
 import com.example.myradio.playback.PlaybackRoute
 import com.example.myradio.playback.PlaybackService
 import com.example.myradio.playback.PlaybackUiState
+import com.example.myradio.playback.StreamRetryManager
 import com.example.myradio.playback.VisualizerManager
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -36,7 +43,9 @@ import kotlinx.coroutines.launch
 class PlaybackViewModel(
     private val repository: RadioRepository,
     private val context: Context,
-    private val castManager: CastManager
+    private val castManager: CastManager,
+    private val networkMonitor: NetworkConnectivityMonitor,
+    private val database: MyRadioDatabase
 ) : ViewModel() {
 
     companion object {
@@ -45,6 +54,8 @@ class PlaybackViewModel(
 
     private val _playbackState = MutableStateFlow(PlaybackUiState())
     val playbackState: StateFlow<PlaybackUiState> = _playbackState.asStateFlow()
+
+    private val songHistoryDao = database.songHistoryDao()
 
     private val _songHistory = MutableStateFlow<List<PlayedSong>>(emptyList())
     val songHistory: StateFlow<List<PlayedSong>> = _songHistory.asStateFlow()
@@ -55,10 +66,68 @@ class PlaybackViewModel(
     private var mediaController: MediaController? = null
     private var progressJob: Job? = null
     private var castJob: Job? = null
+    private var retryJob: Job? = null
     private var castHandoverInProgress: Boolean = false
+    private val retryManager = StreamRetryManager()
 
     init {
-        _songHistory.value = SongHistoryStorage.loadHistory(context)
+        viewModelScope.launch {
+            songHistoryDao.observeHistory().collect { entities ->
+                _songHistory.value = entities.map { it.toPlayedSong() }
+            }
+        }
+        observeNetworkForRetry()
+    }
+
+    private fun observeNetworkForRetry() {
+        viewModelScope.launch {
+            var wasDisconnected = false
+            networkMonitor.isConnected.collect { connected ->
+                if (!connected) {
+                    wasDisconnected = true
+                } else if (wasDisconnected && _playbackState.value.isRetrying) {
+                    wasDisconnected = false
+                    cancelRetry()
+                    retryManager.reset()
+                    scheduleRetry(0L)
+                }
+            }
+        }
+    }
+
+    private fun scheduleRetry(delayMs: Long) {
+        val station = _playbackState.value.currentStation ?: return
+        val controller = mediaController ?: return
+
+        retryJob?.cancel()
+        retryJob = viewModelScope.launch {
+            if (delayMs > 0) delay(delayMs)
+            Log.d(TAG, "Retrying stream for ${station.name}...")
+            val mediaItem = MediaItem.Builder()
+                .setMediaId(station.id.toString())
+                .setUri(station.streamUrl)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(station.name)
+                        .setDisplayTitle(station.name)
+                        .setArtist(station.genre)
+                        .setSubtitle(station.genre)
+                        .setStation(station.name)
+                        .build()
+                )
+                .build()
+            controller.setMediaItem(mediaItem)
+            controller.prepare()
+            controller.play()
+        }
+    }
+
+    private fun cancelRetry() {
+        retryJob?.cancel()
+        retryJob = null
+        _playbackState.update {
+            it.copy(isRetrying = false, retryAttempt = 0, lastError = null)
+        }
     }
 
     fun connectToService(context: Context) {
@@ -106,8 +175,22 @@ class PlaybackViewModel(
                             else -> "UNKNOWN"
                         }
                         Log.d(TAG, "onPlaybackStateChanged: $stateStr")
-                        _playbackState.update {
-                            it.copy(isBuffering = playbackState == Player.STATE_BUFFERING)
+                        if (playbackState == Player.STATE_READY) {
+                            retryManager.onSuccess()
+                            retryJob?.cancel()
+                            retryJob = null
+                            _playbackState.update {
+                                it.copy(
+                                    isBuffering = false,
+                                    isRetrying = false,
+                                    retryAttempt = 0,
+                                    lastError = null
+                                )
+                            }
+                        } else {
+                            _playbackState.update {
+                                it.copy(isBuffering = playbackState == Player.STATE_BUFFERING)
+                            }
                         }
                         updatePlaybackTiming()
                     }
@@ -162,23 +245,52 @@ class PlaybackViewModel(
                         }
 
                         if (trackTitle != null && _playbackState.value.currentStation != null) {
-                            val entry = PlayedSong(
-                                id = System.currentTimeMillis(),
+                            val entity = SongHistoryEntity(
                                 stationName = _playbackState.value.currentStation?.name ?: "",
                                 songTitle = trackTitle,
                                 timestamp = System.currentTimeMillis(),
                                 stationLogoUrl = _playbackState.value.currentStation?.logoUrl ?: ""
                             )
-                            SongHistoryStorage.addEntry(this@PlaybackViewModel.context, entry)
-                            _songHistory.value = SongHistoryStorage.loadHistory(this@PlaybackViewModel.context)
+                            viewModelScope.launch(Dispatchers.IO) {
+                                songHistoryDao.insert(entity)
+                                songHistoryDao.trimToMaxEntries()
+                            }
                         }
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
                         if (_playbackState.value.outputRoute == PlaybackRoute.CAST) return
                         Log.e(TAG, "onPlayerError: ${error.errorCodeName} - ${error.message}", error)
-                        _playbackState.update {
-                            it.copy(isPlaying = false, isBuffering = false)
+
+                        val decision = retryManager.onError(error)
+                        if (decision.shouldRetry) {
+                            Log.d(TAG, "Scheduling retry ${decision.attempt}/${decision.maxAttempts} in ${decision.delayMs}ms")
+                            _playbackState.update {
+                                it.copy(
+                                    isPlaying = false,
+                                    isBuffering = false,
+                                    isRetrying = true,
+                                    retryAttempt = decision.attempt,
+                                    retryMaxAttempts = decision.maxAttempts,
+                                    lastError = null
+                                )
+                            }
+                            scheduleRetry(decision.delayMs)
+                        } else {
+                            val errorMsg = if (decision.isPermanentError) {
+                                "Stream nicht verfuegbar (${error.errorCodeName})"
+                            } else {
+                                "Verbindung fehlgeschlagen"
+                            }
+                            _playbackState.update {
+                                it.copy(
+                                    isPlaying = false,
+                                    isBuffering = false,
+                                    isRetrying = false,
+                                    retryAttempt = 0,
+                                    lastError = errorMsg
+                                )
+                            }
                         }
                     }
                 })
@@ -250,18 +362,20 @@ class PlaybackViewModel(
     }
 
     fun playStation(station: RadioStation) {
-        if (_playbackState.value.currentStation?.id == station.id) {
+        if (_playbackState.value.currentStation?.id == station.id && !_playbackState.value.isRetrying && _playbackState.value.lastError == null) {
             togglePlayPause()
             return
         }
 
+        cancelRetry()
+        retryManager.reset()
         Log.d(TAG, "playStation: ${station.name} -> ${station.streamUrl}")
 
         if (castManager.isConnected()) {
             stopLocalPlayback()
             val castStarted = castManager.playRadio(station)
             if (castStarted) {
-                repository.saveLastPlayedStationId(station.id)
+                viewModelScope.launch(Dispatchers.IO) { repository.saveLastPlayedStationId(station.id) }
                 _playbackState.update {
                     it.copy(
                         outputRoute = PlaybackRoute.CAST,
@@ -302,7 +416,7 @@ class PlaybackViewModel(
         controller.prepare()
         controller.play()
 
-        repository.saveLastPlayedStationId(station.id)
+        viewModelScope.launch(Dispatchers.IO) { repository.saveLastPlayedStationId(station.id) }
         _playbackState.update {
             it.copy(
                 outputRoute = PlaybackRoute.LOCAL,
@@ -388,6 +502,8 @@ class PlaybackViewModel(
     }
 
     fun stop() {
+        cancelRetry()
+        retryManager.reset()
         Log.d(TAG, "stop")
         if (_playbackState.value.outputRoute == PlaybackRoute.CAST) {
             castManager.stopPlayback()
@@ -413,8 +529,9 @@ class PlaybackViewModel(
     }
 
     fun clearHistory() {
-        SongHistoryStorage.clearHistory(context)
-        _songHistory.value = emptyList()
+        viewModelScope.launch(Dispatchers.IO) {
+            songHistoryDao.clearAll()
+        }
     }
 
     private fun applyCastState(castState: CastState) {
@@ -495,6 +612,7 @@ class PlaybackViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        retryJob?.cancel()
         progressJob?.cancel()
         disconnectFromService()
         disconnectFromCast()

@@ -72,14 +72,16 @@ class CatalogViewModel(
             return
         }
 
-        repository.addStation(
-            name = station.name,
-            streamUrl = station.streamUrl,
-            genre = station.genre,
-            country = station.country,
-            logoUrl = station.logoUrl
-        )
-        _catalogState.update { it.copy(lastAddedName = station.name, errorMessage = null) }
+        viewModelScope.launch {
+            repository.addStation(
+                name = station.name,
+                streamUrl = station.streamUrl,
+                genre = station.genre,
+                country = station.country,
+                logoUrl = station.logoUrl
+            )
+            _catalogState.update { it.copy(lastAddedName = station.name, errorMessage = null) }
+        }
     }
 }
 

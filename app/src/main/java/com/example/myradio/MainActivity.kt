@@ -1,6 +1,7 @@
 package com.example.myradio
 
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -9,12 +10,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
+import com.google.android.gms.cast.framework.CastContext
 import com.example.myradio.ui.screens.RadioApp
 import com.example.myradio.ui.theme.MyRadioTheme
 import com.example.myradio.viewmodel.CatalogViewModel
 import com.example.myradio.viewmodel.MyRadioViewModelFactory
 import com.example.myradio.viewmodel.PlaybackViewModel
 import com.example.myradio.viewmodel.PodcastViewModel
+import com.example.myradio.viewmodel.SettingsViewModel
 import com.example.myradio.viewmodel.StationViewModel
 
 class MainActivity : FragmentActivity() {
@@ -25,6 +28,7 @@ class MainActivity : FragmentActivity() {
     private val stationViewModel: StationViewModel by viewModels { factory }
     private val catalogViewModel: CatalogViewModel by viewModels { factory }
     private val podcastViewModel: PodcastViewModel by viewModels { factory }
+    private val settingsViewModel: SettingsViewModel by viewModels { factory }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,7 +43,8 @@ class MainActivity : FragmentActivity() {
                         playbackViewModel = playbackViewModel,
                         stationViewModel = stationViewModel,
                         catalogViewModel = catalogViewModel,
-                        podcastViewModel = podcastViewModel
+                        podcastViewModel = podcastViewModel,
+                        settingsViewModel = settingsViewModel
                     )
                 }
             }
@@ -50,6 +55,12 @@ class MainActivity : FragmentActivity() {
         super.onStart()
         playbackViewModel.connectToService(this)
         playbackViewModel.connectToCast()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        return CastContext.getSharedInstance(this)
+            .onDispatchVolumeKeyEventBeforeJellyBean(event)
+                || super.dispatchKeyEvent(event)
     }
 
     override fun onStop() {

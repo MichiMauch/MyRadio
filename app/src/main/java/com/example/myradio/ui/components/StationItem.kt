@@ -54,13 +54,14 @@ fun StationItem(
     isCurrentStation: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
-    onDelete: () -> Unit,
+    onDelete: (() -> Unit)? = null,
     onToggleFavorite: () -> Unit = {},
+    showDragHandle: Boolean = true,
     dragModifier: Modifier = Modifier
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    if (showDeleteDialog) {
+    if (showDeleteDialog && onDelete != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Sender löschen") },
@@ -110,13 +111,15 @@ fun StationItem(
                     .background(if (isCurrentStation) StereoAmber else StereoOutline)
             )
 
-            // Drag handle
-            Icon(
-                imageVector = Icons.Default.DragHandle,
-                contentDescription = "Reihenfolge ändern",
-                modifier = dragModifier.size(24.dp),
-                tint = StereoText
-            )
+            if (showDragHandle) {
+                // Drag handle
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Reihenfolge ändern",
+                    modifier = dragModifier.size(24.dp),
+                    tint = StereoText
+                )
+            }
 
             Spacer(modifier = Modifier.width(10.dp))
 
@@ -214,13 +217,15 @@ fun StationItem(
                 }
             }
 
-            // Delete button
-            IconButton(onClick = { showDeleteDialog = true }) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Löschen",
-                    tint = StereoText
-                )
+            if (onDelete != null) {
+                // Delete button
+                IconButton(onClick = { showDeleteDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Löschen",
+                        tint = StereoText
+                    )
+                }
             }
         }
     }

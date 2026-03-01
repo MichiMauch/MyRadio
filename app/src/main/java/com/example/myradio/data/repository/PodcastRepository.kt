@@ -1,7 +1,9 @@
 package com.example.myradio.data.repository
 
 import android.content.Context
-import com.example.myradio.data.local.PodcastSubscriptionsStorage
+import com.example.myradio.data.local.db.MyRadioDatabase
+import com.example.myradio.data.local.db.toEntity
+import com.example.myradio.data.local.db.toModel
 import com.example.myradio.data.model.DiscoverPodcastItem
 import com.example.myradio.data.model.DiscoverSource
 import com.example.myradio.data.model.PodcastEpisode
@@ -13,13 +15,16 @@ import com.example.myradio.data.remote.PodcastFeedResult
 import com.example.myradio.data.remote.PodcastRssApi
 import com.example.myradio.data.remote.PodcastSearchApi
 
-class PodcastRepository(private val context: Context) {
+class PodcastRepository(private val context: Context, private val database: MyRadioDatabase) {
 
-    fun loadSubscriptions(): List<PodcastSubscription> =
-        PodcastSubscriptionsStorage.load(context)
+    private val subscriptionDao = database.podcastSubscriptionDao()
 
-    fun saveSubscriptions(subscriptions: List<PodcastSubscription>) {
-        PodcastSubscriptionsStorage.save(context, subscriptions)
+    suspend fun loadSubscriptions(): List<PodcastSubscription> =
+        subscriptionDao.getAll().map { it.toModel() }
+
+    suspend fun saveSubscriptions(subscriptions: List<PodcastSubscription>) {
+        subscriptionDao.deleteAll()
+        subscriptionDao.insertAll(subscriptions.map { it.toEntity() })
     }
 
     fun fetchFeed(feedUrl: String): PodcastFeedResult? =

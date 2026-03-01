@@ -29,9 +29,13 @@ class PodcastViewModel(
     val discoveryState: StateFlow<DiscoveryUiState> = _discoveryState.asStateFlow()
 
     init {
-        val subscriptions = podcastRepository.loadSubscriptions()
-        _podcastState.update { it.copy(subscriptions = subscriptions) }
-        refreshPodcastEpisodes()
+        viewModelScope.launch {
+            val subscriptions = withContext(Dispatchers.IO) {
+                podcastRepository.loadSubscriptions()
+            }
+            _podcastState.update { it.copy(subscriptions = subscriptions) }
+            refreshPodcastEpisodes()
+        }
     }
 
     // --- Podcast Feed ---

@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -35,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,8 +57,10 @@ import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import com.example.myradio.data.model.RadioStation
+import com.example.myradio.ui.components.StationItem
 import com.example.myradio.ui.theme.StereoAmber
 import com.example.myradio.ui.theme.StereoOutline
+import com.example.myradio.viewmodel.ViewMode
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -66,69 +70,129 @@ fun StationsGridPage(
     stations: List<RadioStation>,
     currentStationId: Int?,
     isPlaying: Boolean,
+    viewMode: ViewMode = ViewMode.GRID,
     onTileClick: (RadioStation) -> Unit,
-    onOpenDetail: (Int) -> Unit
+    onOpenDetail: (Int) -> Unit,
+    onDelete: (Int) -> Unit = {}
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        items(stations, key = { it.id }) { station ->
-            val isCurrent = station.id == currentStationId
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .combinedClickable(
-                        onClick = { onTileClick(station) },
-                        onLongClick = { onOpenDetail(station.id) }
-                    ),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ),
-                border = androidx.compose.foundation.BorderStroke(
-                    width = if (isCurrent) 2.dp else 1.dp,
-                    color = if (isCurrent && isPlaying) StereoAmber else StereoOutline
-                )
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    if (station.logoUrl.isNotBlank()) {
-                        SubcomposeAsyncImage(
-                            model = station.logoUrl,
-                            contentDescription = station.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                            loading = {
-                                StationTileFallback(
-                                    station = station,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            },
-                            error = {
-                                StationTileFallback(
-                                    station = station,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            },
-                            success = { SubcomposeAsyncImageContent() }
-                        )
-                    } else {
-                        StationTileFallback(
-                            station = station,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+    var deleteStation by remember { mutableStateOf<RadioStation?>(null) }
 
-                    StationTileNameOverlay(
-                        name = station.name,
-                        modifier = Modifier.align(Alignment.BottomCenter)
+    deleteStation?.let { station ->
+        AlertDialog(
+            onDismissRequest = { deleteStation = null },
+            title = { Text("Sender löschen") },
+            text = { Text("\"${station.name}\" wirklich löschen?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(station.id)
+                    deleteStation = null
+                }) {
+                    Text("Löschen")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteStation = null }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
+    }
+
+    if (viewMode == ViewMode.LIST) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 6.dp)
+        ) {
+            items(stations, key = { it.id }) { station ->
+                val isCurrent = station.id == currentStationId
+                StationItem(
+                    station = station,
+                    isCurrentStation = isCurrent,
+                    isPlaying = isCurrent && isPlaying,
+                    onClick = { onTileClick(station) },
+                    onDelete = null,
+                    showDragHandle = false
+                )
+            }
+        }
+    } else {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items(stations, key = { it.id }) { station ->
+                val isCurrent = station.id == currentStationId
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .combinedClickable(
+                            onClick = { onTileClick(station) },
+                            onLongClick = { onOpenDetail(station.id) }
+                        ),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = if (isCurrent) 2.dp else 1.dp,
+                        color = if (isCurrent && isPlaying) StereoAmber else StereoOutline
                     )
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        if (station.logoUrl.isNotBlank()) {
+                            SubcomposeAsyncImage(
+                                model = station.logoUrl,
+                                contentDescription = station.name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                                loading = {
+                                    StationTileFallback(
+                                        station = station,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                },
+                                error = {
+                                    StationTileFallback(
+                                        station = station,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                },
+                                success = { SubcomposeAsyncImageContent() }
+                            )
+                        } else {
+                            StationTileFallback(
+                                station = station,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        StationTileNameOverlay(
+                            name = station.name,
+                            modifier = Modifier.align(Alignment.BottomCenter)
+                        )
+
+                        // Delete icon top-right
+                        IconButton(
+                            onClick = { deleteStation = station },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteOutline,
+                                contentDescription = "Löschen",
+                                modifier = Modifier.size(18.dp),
+                                tint = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -347,27 +411,28 @@ fun StationSortPage(
         onReorder(mutable)
     }
 
-    LazyColumn(
-        state = lazyListState,
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        item {
-            Text(
-                text = "Sender sortieren",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Ziehe einen Sender am Griff, um die Reihenfolge zu ändern.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
-            )
-        }
+        Text(
+            text = "Sender sortieren",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Ziehe einen Sender am Griff, um die Reihenfolge zu ändern.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+        )
 
-        items(stations, key = { it.id }) { station ->
+        LazyColumn(
+            state = lazyListState,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(stations, key = { it.id }) { station ->
             ReorderableItem(reorderableState, key = station.id) {
                 Card(
                     modifier = Modifier
@@ -440,6 +505,7 @@ fun StationSortPage(
                     }
                 }
             }
+        }
         }
     }
 }

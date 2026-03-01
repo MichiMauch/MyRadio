@@ -16,5 +16,9 @@ data class PlaybackUiState(
     val nowPlayingTitle: String? = null,
     val outputRoute: PlaybackRoute = PlaybackRoute.LOCAL,
     val castDeviceName: String? = null,
-    val isCastConnected: Boolean = false
+    val isCastConnected: Boolean = false,
+    val isRetrying: Boolean = false,
+    val retryAttempt: Int = 0,
+    val retryMaxAttempts: Int = 5,
+    val lastError: String? = null
 )

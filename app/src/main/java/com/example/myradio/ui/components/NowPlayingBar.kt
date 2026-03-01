@@ -41,6 +41,7 @@ import com.example.myradio.ui.theme.StereoBlack
 import com.example.myradio.ui.theme.StereoOutline
 import com.example.myradio.ui.theme.StereoPanel
 import com.example.myradio.ui.theme.StereoPanelRaised
+import com.example.myradio.ui.theme.StereoRed
 import com.example.myradio.ui.theme.StereoSubtext
 import com.example.myradio.ui.theme.StereoText
 
@@ -55,6 +56,10 @@ fun NowPlayingBar(
     durationMs: Long,
     isPlaying: Boolean,
     isBuffering: Boolean,
+    isRetrying: Boolean = false,
+    retryAttempt: Int = 0,
+    retryMaxAttempts: Int = 5,
+    lastError: String? = null,
     onPlayPauseClick: () -> Unit
 ) {
     Surface(
@@ -163,13 +168,33 @@ fun NowPlayingBar(
                             )
                         )
                     }
+                    val statusText: String
+                    val statusColor: androidx.compose.ui.graphics.Color
+                    when {
+                        isRetrying -> {
+                            statusText = "Erneuter Verbindungsversuch ($retryAttempt/$retryMaxAttempts)..."
+                            statusColor = StereoAmber
+                        }
+                        lastError != null -> {
+                            statusText = lastError
+                            statusColor = StereoRed
+                        }
+                        isBuffering -> {
+                            statusText = "Buffering..."
+                            statusColor = StereoSubtext
+                        }
+                        else -> {
+                            statusText = genre
+                            statusColor = StereoSubtext
+                        }
+                    }
                     Text(
-                        text = if (isBuffering) "Buffering..." else genre,
+                        text = statusText,
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace,
                             letterSpacing = 0.6.sp
                         ),
-                        color = StereoSubtext,
+                        color = statusColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

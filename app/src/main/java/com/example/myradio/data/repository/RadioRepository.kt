@@ -3,35 +3,45 @@ package com.example.myradio.data.repository
 import android.content.Context
 import android.util.Log
 import com.example.myradio.data.local.StationsDataSource
-import com.example.myradio.data.local.StationsJsonStorage
+import com.example.myradio.data.local.db.AppSettingEntity
+import com.example.myradio.data.local.db.DeletedDefaultEntity
+import com.example.myradio.data.local.db.MyRadioDatabase
+import com.example.myradio.data.local.db.StationPreferencesEntity
+import com.example.myradio.data.local.db.toRadioStation
 import com.example.myradio.data.model.RadioStation
 import com.example.myradio.data.model.StationPreferences
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 
-class RadioRepository(private val context: Context) {
+class RadioRepository(
+    private val context: Context,
+    private val database: MyRadioDatabase,
+    scope: CoroutineScope
+) {
 
     companion object {
         private const val TAG = "RadioRepository"
     }
 
-    private val _stations = MutableStateFlow<List<RadioStation>>(emptyList())
-    val stations: StateFlow<List<RadioStation>> = _stations.asStateFlow()
+    private val stationDao = database.stationDao()
+    private val settingsDao = database.appSettingsDao()
 
-    init {
-        refreshStations()
-    }
-
-    private fun refreshStations() {
+    val stations: StateFlow<List<RadioStation>> = combine(
+        stationDao.observeUserStations(),
+        stationDao.observePreferences(),
+        stationDao.observeDeletedDefaults()
+    ) { userStationEntities, prefEntities, deletedDefaultIds ->
         val defaultStations = StationsDataSource.getStations()
-        val deletedDefaultIds = StationsJsonStorage.loadDeletedDefaultIds(context)
-        val userStations = StationsJsonStorage.loadUserStations(context)
-        val prefs = StationsJsonStorage.loadStationPreferences(context)
+        val deletedSet = deletedDefaultIds.toSet()
+        val prefsMap = prefEntities.associate { it.stationId to StationPreferences(it.isFavorite, it.sortOrder) }
+        val userStations = userStationEntities.map { it.toRadioStation() }
 
-        val activeDefaults = defaultStations.filter { it.id !in deletedDefaultIds }
+        val activeDefaults = defaultStations.filter { it.id !in deletedSet }
         val allStations = (activeDefaults + userStations).map { station ->
-            val pref = prefs[station.id]
+            val pref = prefsMap[station.id]
             if (pref != null) {
                 station.copy(isFavorite = pref.isFavorite, sortOrder = pref.sortOrder)
             } else {
@@ -39,26 +49,22 @@ class RadioRepository(private val context: Context) {
             }
         }
 
-        // Sort: favorites first, then by sortOrder, then by id
-        _stations.value = allStations.sortedWith(
+        allStations.sortedWith(
             compareByDescending<RadioStation> { it.isFavorite }
                 .thenBy { it.sortOrder }
                 .thenBy { it.id }
-        )
-        Log.d(TAG, "refreshStations: ${activeDefaults.size} defaults + ${userStations.size} user = ${allStations.size} total")
-    }
-
-    fun getAllStations(): List<RadioStation> {
-        return _stations.value
-    }
+        ).also {
+            Log.d(TAG, "stations: ${activeDefaults.size} defaults + ${userStations.size} user = ${it.size} total")
+        }
+    }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     fun getStationById(id: Int): RadioStation? {
-        return _stations.value.find { it.id == id }
+        return stations.value.find { it.id == id }
     }
 
-    fun addStation(name: String, streamUrl: String, genre: String, country: String, logoUrl: String = "") {
+    suspend fun addStation(name: String, streamUrl: String, genre: String, country: String, logoUrl: String = "") {
         val newId = generateNextId()
-        val station = RadioStation(
+        val entity = com.example.myradio.data.local.db.UserStationEntity(
             id = newId,
             name = name,
             streamUrl = streamUrl,
@@ -66,65 +72,57 @@ class RadioRepository(private val context: Context) {
             country = country,
             logoUrl = logoUrl
         )
-
-        val userStations = StationsJsonStorage.loadUserStations(context).toMutableList()
-        userStations.add(station)
-        StationsJsonStorage.saveUserStations(context, userStations)
-
-        refreshStations()
-        Log.d(TAG, "addStation: ${station.name} (id=$newId)")
+        stationDao.insertStation(entity)
+        Log.d(TAG, "addStation: $name (id=$newId)")
     }
 
-    fun deleteStation(id: Int) {
+    suspend fun deleteStation(id: Int) {
         val defaultIds = StationsDataSource.getStations().map { it.id }.toSet()
-
         if (id in defaultIds) {
-            val deletedIds = StationsJsonStorage.loadDeletedDefaultIds(context).toMutableSet()
-            deletedIds.add(id)
-            StationsJsonStorage.saveDeletedDefaultIds(context, deletedIds)
+            stationDao.insertDeletedDefault(DeletedDefaultEntity(id))
             Log.d(TAG, "deleteStation: default station id=$id marked as deleted")
         } else {
-            val userStations = StationsJsonStorage.loadUserStations(context).toMutableList()
-            userStations.removeAll { it.id == id }
-            StationsJsonStorage.saveUserStations(context, userStations)
+            stationDao.deleteStation(id)
             Log.d(TAG, "deleteStation: user station id=$id removed")
         }
-
-        refreshStations()
     }
 
-    // --- Favorites & Sorting ---
-
-    fun toggleFavorite(stationId: Int) {
-        val prefs = StationsJsonStorage.loadStationPreferences(context).toMutableMap()
-        val current = prefs[stationId] ?: StationPreferences()
-        prefs[stationId] = current.copy(isFavorite = !current.isFavorite)
-        StationsJsonStorage.saveStationPreferences(context, prefs)
-        refreshStations()
+    suspend fun toggleFavorite(stationId: Int) {
+        val current = stations.value.find { it.id == stationId }
+        val currentFav = current?.isFavorite ?: false
+        val currentOrder = current?.sortOrder ?: Int.MAX_VALUE
+        stationDao.upsertPreference(
+            StationPreferencesEntity(
+                stationId = stationId,
+                isFavorite = !currentFav,
+                sortOrder = currentOrder
+            )
+        )
     }
 
-    fun updateStationOrder(reorderedStations: List<RadioStation>) {
-        val prefs = StationsJsonStorage.loadStationPreferences(context).toMutableMap()
+    suspend fun updateStationOrder(reorderedStations: List<RadioStation>) {
         reorderedStations.forEachIndexed { index, station ->
-            val current = prefs[station.id] ?: StationPreferences()
-            prefs[station.id] = current.copy(sortOrder = index)
+            stationDao.upsertPreference(
+                StationPreferencesEntity(
+                    stationId = station.id,
+                    isFavorite = station.isFavorite,
+                    sortOrder = index
+                )
+            )
         }
-        StationsJsonStorage.saveStationPreferences(context, prefs)
-        refreshStations()
     }
 
-    // --- Last Played Station ---
-
-    fun getLastPlayedStationId(): Int? =
-        StationsJsonStorage.loadLastPlayedStationId(context)
-
-    fun saveLastPlayedStationId(stationId: Int) {
-        StationsJsonStorage.saveLastPlayedStationId(context, stationId)
+    suspend fun getLastPlayedStationId(): Int? {
+        return settingsDao.getValue("last_played_station_id")?.toIntOrNull()
     }
 
-    private fun generateNextId(): Int {
+    suspend fun saveLastPlayedStationId(stationId: Int) {
+        settingsDao.upsert(AppSettingEntity("last_played_station_id", stationId.toString()))
+    }
+
+    private suspend fun generateNextId(): Int {
         val defaultMax = StationsDataSource.getStations().maxOfOrNull { it.id } ?: 0
-        val userMax = StationsJsonStorage.loadUserStations(context).maxOfOrNull { it.id } ?: 0
+        val userMax = stationDao.getMaxUserStationId() ?: 0
         return maxOf(defaultMax, userMax) + 1
     }
 }

@@ -10,13 +10,15 @@ class MyRadioViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
         modelClass.isAssignableFrom(PlaybackViewModel::class.java) ->
-            PlaybackViewModel(app.radioRepository, app, app.castManager)
+            PlaybackViewModel(app.radioRepository, app, app.castManager, app.networkMonitor, app.database)
         modelClass.isAssignableFrom(StationViewModel::class.java) ->
             StationViewModel(app.radioRepository)
         modelClass.isAssignableFrom(CatalogViewModel::class.java) ->
             CatalogViewModel(app.radioRepository)
         modelClass.isAssignableFrom(PodcastViewModel::class.java) ->
             PodcastViewModel(app.podcastRepository)
+        modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
+            SettingsViewModel(app.database.appSettingsDao())
         else -> throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     } as T
 }

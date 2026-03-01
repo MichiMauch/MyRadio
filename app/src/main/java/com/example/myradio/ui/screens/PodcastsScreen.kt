@@ -49,6 +49,7 @@ import com.example.myradio.data.model.PodcastEpisode
 import com.example.myradio.data.model.PodcastSearchResult
 import com.example.myradio.playback.PlaybackUiState
 import com.example.myradio.viewmodel.PodcastUiState
+import com.example.myradio.viewmodel.ViewMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -57,6 +58,7 @@ import java.util.Locale
 fun PodcastsScreen(
     modifier: Modifier = Modifier,
     state: PodcastUiState,
+    viewMode: ViewMode = ViewMode.GRID,
     onFeedUrlChange: (String) -> Unit,
     onAddFeed: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -105,6 +107,7 @@ fun PodcastsScreen(
         PodcastGridPage(
             modifier = modifier,
             state = state,
+            viewMode = viewMode,
             onRefresh = onRefresh,
             onOpenSearch = onOpenSearch,
             onSelectFeed = onSelectFeed
@@ -140,6 +143,7 @@ fun PodcastsScreen(
 private fun PodcastGridPage(
     modifier: Modifier,
     state: PodcastUiState,
+    viewMode: ViewMode = ViewMode.GRID,
     onRefresh: () -> Unit,
     onOpenSearch: () -> Unit,
     onSelectFeed: (Long?) -> Unit
@@ -201,45 +205,110 @@ private fun PodcastGridPage(
             return
         }
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize().padding(top = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(state.subscriptions, key = { it.id }) { subscription ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clickable { onSelectFeed(subscription.id) },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Box(
+        if (viewMode == ViewMode.LIST) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(top = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(state.subscriptions, key = { it.id }) { subscription ->
+                    Card(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(10.dp)
+                            .fillMaxWidth()
+                            .clickable { onSelectFeed(subscription.id) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
                     ) {
-                        if (subscription.imageUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = subscription.imageUrl,
-                                contentDescription = subscription.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MusicNote,
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (subscription.imageUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = subscription.imageUrl,
                                     contentDescription = subscription.title,
-                                    modifier = Modifier.size(56.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(64.dp)
                                 )
+                            } else {
+                                Box(
+                                    modifier = Modifier.size(64.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(32.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = subscription.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (subscription.description.isNotBlank()) {
+                                    Text(
+                                        text = subscription.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.fillMaxSize().padding(top = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(state.subscriptions, key = { it.id }) { subscription ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clickable { onSelectFeed(subscription.id) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp)
+                        ) {
+                            if (subscription.imageUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = subscription.imageUrl,
+                                    contentDescription = subscription.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = subscription.title,
+                                        modifier = Modifier.size(56.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }

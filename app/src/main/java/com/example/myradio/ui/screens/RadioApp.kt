@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -57,7 +58,9 @@ import com.example.myradio.ui.theme.StereoPanelRaised
 import com.example.myradio.viewmodel.CatalogViewModel
 import com.example.myradio.viewmodel.PlaybackViewModel
 import com.example.myradio.viewmodel.PodcastViewModel
+import com.example.myradio.viewmodel.SettingsViewModel
 import com.example.myradio.viewmodel.StationViewModel
+import com.example.myradio.viewmodel.ViewMode
 import com.google.android.gms.cast.framework.CastButtonFactory
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,7 +69,8 @@ fun RadioApp(
     playbackViewModel: PlaybackViewModel,
     stationViewModel: StationViewModel,
     catalogViewModel: CatalogViewModel,
-    podcastViewModel: PodcastViewModel
+    podcastViewModel: PodcastViewModel,
+    settingsViewModel: SettingsViewModel
 ) {
     val playbackState by playbackViewModel.playbackState.collectAsState()
     val stations by stationViewModel.stations.collectAsState()
@@ -74,6 +78,7 @@ fun RadioApp(
     val catalogState by catalogViewModel.catalogState.collectAsState()
     val podcastState by podcastViewModel.podcastState.collectAsState()
     val discoveryState by podcastViewModel.discoveryState.collectAsState()
+    val settingsState by settingsViewModel.state.collectAsState()
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     var showHistory by remember { mutableStateOf(false) }
@@ -105,6 +110,9 @@ fun RadioApp(
     BackHandler(enabled = selectedTab == 0 && isSortMode) {
         isSortMode = false
     }
+    BackHandler(enabled = selectedTab == 4) {
+        selectedTab = 0
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -116,14 +124,27 @@ fun RadioApp(
                             0 -> "MyRadio"
                             1 -> "Sender-Katalog"
                             2 -> "Podcasts"
+                            4 -> "Einstellungen"
                             else -> "Entdecken"
                         }
                     )
                 },
                 scrollBehavior = scrollBehavior,
                 actions = {
+                    IconButton(onClick = { selectedTab = 4 }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Einstellungen"
+                        )
+                    }
                     CastActionButton()
                     if (selectedTab == 0 && selectedStationId == null && !isSortMode) {
+                        IconButton(onClick = { selectedTab = 1 }) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Sender suchen"
+                            )
+                        }
                         IconButton(onClick = { isSortMode = true }) {
                             Icon(
                                 imageVector = Icons.Default.DragHandle,
@@ -139,7 +160,8 @@ fun RadioApp(
                 val hasActiveMedia = playbackState.currentStation != null ||
                     !playbackState.currentTitle.isNullOrBlank() ||
                     playbackState.isPlaying ||
-                    playbackState.isBuffering
+                    playbackState.isBuffering ||
+                    playbackState.isRetrying
                 if (hasActiveMedia) {
                     NowPlayingBar(
                         stationName = playbackState.currentStation?.name
@@ -161,6 +183,10 @@ fun RadioApp(
                         durationMs = playbackState.durationMs,
                         isPlaying = playbackState.isPlaying,
                         isBuffering = playbackState.isBuffering,
+                        isRetrying = playbackState.isRetrying,
+                        retryAttempt = playbackState.retryAttempt,
+                        retryMaxAttempts = playbackState.retryMaxAttempts,
+                        lastError = playbackState.lastError,
                         onPlayPauseClick = { playbackViewModel.togglePlayPause() }
                     )
                 }
@@ -196,34 +222,6 @@ fun RadioApp(
                         Icon(
                             imageVector = Icons.Default.Radio,
                             contentDescription = "Sender",
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
-                    val catalogSelected = selectedTab == 1
-                    Button(
-                        onClick = { selectedTab = 1 },
-                        modifier = Modifier
-                            .weight(1f)
-                            .shadow(
-                                elevation = if (catalogSelected) 10.dp else 2.dp,
-                                ambientColor = StereoAmber,
-                                spotColor = StereoAmber
-                            )
-                            .heightIn(min = 64.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (catalogSelected) StereoPanelRaised else StereoPanel,
-                            contentColor = if (catalogSelected) StereoAmber else MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(0.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (catalogSelected) StereoAmber else StereoOutline
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Katalog",
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -354,6 +352,7 @@ fun RadioApp(
                             stations = stations,
                             currentStationId = playbackState.currentStation?.id,
                             isPlaying = playbackState.isPlaying,
+                            viewMode = settingsState.stationViewMode,
                             onTileClick = { station ->
                                 if (station.id == playbackState.currentStation?.id) {
                                     playbackViewModel.togglePlayPause()
@@ -363,6 +362,12 @@ fun RadioApp(
                             },
                             onOpenDetail = { stationId ->
                                 selectedStationId = stationId
+                            },
+                            onDelete = { stationId ->
+                                if (playbackState.currentStation?.id == stationId) {
+                                    playbackViewModel.stop()
+                                }
+                                stationViewModel.deleteStation(stationId)
                             }
                         )
                     }
@@ -386,6 +391,7 @@ fun RadioApp(
                     .background(MaterialTheme.colorScheme.background)
                     .padding(paddingValues),
                 state = podcastState,
+                viewMode = settingsState.podcastViewMode,
                 onFeedUrlChange = { podcastViewModel.updatePodcastFeedUrl(it) },
                 onAddFeed = { podcastViewModel.addPodcastSubscription() },
                 onOpenSearch = { podcastViewModel.openPodcastSearch() },
@@ -405,6 +411,16 @@ fun RadioApp(
                     playbackViewModel.togglePodcastEpisode(episode, podcastImageUrl)
                 },
                 playbackState = playbackState
+            )
+        } else if (selectedTab == 4) {
+            SettingsScreen(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(paddingValues),
+                state = settingsState,
+                onStationViewModeChange = { settingsViewModel.setStationViewMode(it) },
+                onPodcastViewModeChange = { settingsViewModel.setPodcastViewMode(it) }
             )
         } else {
             PodcastDiscoveryScreen(

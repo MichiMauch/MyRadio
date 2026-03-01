@@ -18,12 +18,15 @@ import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.example.myradio.data.local.StationsDataSource
-import com.example.myradio.data.local.StationsJsonStorage
-import com.example.myradio.playback.VisualizerManager
+import com.example.myradio.data.local.db.MyRadioDatabase
+import com.example.myradio.data.local.db.toRadioStation
 import com.example.myradio.widget.RadioWidgetProvider
 import com.example.myradio.widget.WidgetState
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 class PlaybackService : MediaSessionService() {
 
@@ -176,11 +179,19 @@ class PlaybackService : MediaSessionService() {
                     controller: MediaSession.ControllerInfo
                 ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
                     val ctx = this@PlaybackService
-                    val lastId = StationsJsonStorage.loadLastPlayedStationId(ctx)
-                    val deletedIds = StationsJsonStorage.loadDeletedDefaultIds(ctx)
+                    val db = MyRadioDatabase.getInstance(ctx)
+
+                    val (lastId, deletedIds, userStationEntities) = runBlocking(Dispatchers.IO) {
+                        Triple(
+                            db.appSettingsDao().getValue("last_played_station_id")?.toIntOrNull(),
+                            db.stationDao().observeDeletedDefaults().first(),
+                            db.stationDao().observeUserStations().first()
+                        )
+                    }
+
                     val allStations = StationsDataSource.getStations()
-                        .filter { it.id !in deletedIds } +
-                        StationsJsonStorage.loadUserStations(ctx)
+                        .filter { it.id !in deletedIds.toSet() } +
+                        userStationEntities.map { it.toRadioStation() }
 
                     val station = allStations.find { it.id == lastId }
                         ?: allStations.firstOrNull()

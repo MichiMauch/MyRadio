@@ -16,6 +16,9 @@
     <!-- Audio capture for visualizer (own playback) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Network state for auto-reconnect -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:name=".MyRadioApplication"
         android:allowBackup="true"
