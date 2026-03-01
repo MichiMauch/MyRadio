@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_body"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="8dp"
+    android:background="@drawable/widget_background">
+
+    <ImageView
+        android:id="@+id/widget_station_icon"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:src="@drawable/ic_radio_widget"
+        android:contentDescription="Station" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp">
+
+        <TextView
+            android:id="@+id/widget_station_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="MyRadio"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="#333333"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/widget_now_playing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Kein Sender"
+            android:textSize="12sp"
+            android:textColor="#666666"
+            android:singleLine="true"
+            android:ellipsize="marquee"
+            android:marqueeRepeatLimit="marquee_forever"
+            android:focusable="true"
+            android:focusableInTouchMode="true" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/widget_play_pause"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:src="@drawable/ic_play"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Play/Pause"
+        android:scaleType="centerInside" />
+
+    <ImageButton
+        android:id="@+id/widget_stop"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:src="@drawable/ic_stop"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Stop"
+        android:scaleType="centerInside" />
+</LinearLayout>

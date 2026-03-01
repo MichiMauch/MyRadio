@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(export JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\")",
+      "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
+      "mcp__desktop-commander__read_file",
+      "Bash(JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew:*)",
+      "Bash(./gradlew assembleRelease 2>&1)",
+      "Bash(git init && git add -A && git status)"
+    ]
+  }
+}
