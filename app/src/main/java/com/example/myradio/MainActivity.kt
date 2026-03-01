@@ -58,9 +58,23 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        return CastContext.getSharedInstance(this)
-            .onDispatchVolumeKeyEventBeforeJellyBean(event)
-                || super.dispatchKeyEvent(event)
+        if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+            event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+        ) {
+            val session = runCatching {
+                CastContext.getSharedInstance(this).sessionManager.currentCastSession
+            }.getOrNull()
+
+            if (session != null && session.isConnected) {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    val delta = if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) 0.05 else -0.05
+                    val newVolume = (session.volume + delta).coerceIn(0.0, 1.0)
+                    runCatching { session.setVolume(newVolume) }
+                }
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onStop() {
